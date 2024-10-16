@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.stats import norm
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import fsolve
 
 start = dt.datetime(2023,10,1)
 end = dt.datetime.now()
@@ -129,7 +130,7 @@ call_options = options_chain.calls
 
 current_price = S0
 filtered_df_HigherPrice = call_options[call_options["strike"] > current_price].iloc[-2:]  # Options with strike above current price
-filtered_df_LowerPrice = call_options[call_options["strike"] < current_price].iloc[-2:]
+filtered_df_LowerPrice = call_options[call_options["strike"] < current_price].iloc[:2]
 
 tolerance = 5
 filtered_df_sameprice = call_options[(call_options["strike"] >= current_price - tolerance) &(call_options["strike"] <= current_price + tolerance)]
@@ -139,3 +140,60 @@ print(filtered_df_sameprice)
 
 print(len(filtered_df_HigherPrice))
 print(len(filtered_df_LowerPrice))
+
+def imp_vol(market_price):
+    S_0 = S0
+    K =  S_0
+    T = 1/12
+    r = 5
+
+    
+    #solving for volitiity
+    def func_to_optimize(sigma_0):
+        Black_Scholes = BlackAndScholes(S_0, K, T, r, sigma_0)
+        #f(x) = 0
+        return Black_Scholes.black_and_scholes() - market_price
+    
+
+    # Use fsolve to find the sigma that minimizes the difference
+    initial_guess = 2  # Initial guess for volatility (20%)
+    implied_vol = fsolve(func_to_optimize, initial_guess, xtol= 0.005)[0]
+    
+    return implied_vol
+
+
+
+combined_df = pd.concat([filtered_df_HigherPrice, filtered_df_LowerPrice, filtered_df_sameprice])
+combined_df['imp_vols'] = np.nan
+
+
+print(combined_df)
+strikes = combined_df["strike"]
+
+for index, row in combined_df.iterrows():
+    implied_vol = imp_vol(row['strike'])  
+    combined_df.at[index, 'imp_vols'] = implied_vol
+
+print(combined_df[["imp_vols","strike"]])
+
+# Plotting
+plt.figure(figsize=(10, 6))  # Set figure size
+plt.plot(combined_df["strike"], combined_df["imp_vols"], marker='o', color='b', linestyle='-', label='Implied Volatility')
+
+
+plt.title('Implied Volatility vs Strike Price', fontsize=16)
+plt.xlabel('Strike Price', fontsize=14)
+plt.ylabel('Implied Volatility', fontsize=14)
+
+
+plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
+
+
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=12)
+
+plt.legend(loc='best', fontsize=12)
+
+
+plt.tight_layout()  # Adjust layout to prevent overlapping
+plt.savefig('implied_volatility_vs_strike.png', dpi=300)
